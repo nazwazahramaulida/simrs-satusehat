@@ -52,18 +52,7 @@ function createLiveService(env) {
     if (cached && cached.expires_at > Date.now() + 30_000) return cached.access_token;
 
     // OAuth 2.0 client_credentials — sesuai dokumentasi SATUSEHAT.
-    //
-    // Body disusun MANUAL sebagai string. URLSearchParams sengaja tidak dipakai
-    // sama sekali: runtime edge EdgeOne menolaknya sebagai body fetch dengan
-    //   "Failed to construct Request: only String/ArrayBuffer/ArrayBufferView/
-    //    Blob/ReadableStream/FormData is allowed as the body initializer"
-    // dan penolakan itu tetap terjadi walau sudah di-.toString().
-    // String biasa diterima semua runtime tanpa pengecualian.
-    const form = (obj) =>
-      Object.keys(obj)
-        .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(obj[k])}`)
-        .join('&');
-    const body = form({
+    const body = new URLSearchParams({
       client_id: env.SATUSEHAT_CLIENT_ID,
       client_secret: env.SATUSEHAT_CLIENT_SECRET,
     });
@@ -286,5 +275,4 @@ function createMockService(env) {
 
 export function createSatusehatService(env) {
   return env.isMock ? createMockService(env) : createLiveService(env);
-/** Penanda versi file ini — dipakai /api/health untuk membuktikan build mana yang jalan. */
-export const SATUSEHAT_BUILD = 'v3-manual-form';
+}
