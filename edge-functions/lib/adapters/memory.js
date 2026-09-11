@@ -7,6 +7,8 @@
  * JANGAN dipakai sebagai database production.
  */
 
+import { buildSeedData, seedEnabled } from '../seed.js';
+
 const memory = {
   patients: new Map(),
   sync_queue: new Map(),
@@ -14,6 +16,22 @@ const memory = {
 
 let persist = null;
 let loaded = false;
+let seeded = false;
+
+/**
+ * Isi database dengan data contoh — HANYA sekali, dan HANYA kalau koleksinya
+ * masih kosong. Data hasil input pengguna tidak pernah tertimpa.
+ */
+function seedIfEmpty(env) {
+  if (seeded || !seedEnabled(env)) return;
+  seeded = true;
+  const data = buildSeedData();
+  for (const [col, rows] of Object.entries(data)) {
+    if (!memory[col]) memory[col] = new Map();
+    if (memory[col].size > 0) continue; // sudah ada isinya → jangan diganggu
+    for (const row of rows) memory[col].set(row.id, row);
+  }
+}
 
 export function createMemoryAdapter(env) {
   const hook = env.__bindings && env.__bindings.__persist;
@@ -30,12 +48,15 @@ export function createMemoryAdapter(env) {
     }
   }
 
+  seedIfEmpty(env);
+
   const save = () => {
     if (!persist) return;
-    persist.save({
-      patients: [...memory.patients.values()],
-      sync_queue: [...memory.sync_queue.values()],
-    });
+    // Simpan SEMUA koleksi, bukan cuma patients — kalau tidak, kunjungan,
+    // diagnosis, resep, dan tagihan hilang setiap dev server di-restart.
+    const snapshot = {};
+    for (const [col, map] of Object.entries(memory)) snapshot[col] = [...map.values()];
+    persist.save(snapshot);
   };
 
   return {
