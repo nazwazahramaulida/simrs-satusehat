@@ -52,10 +52,17 @@ function createLiveService(env) {
     if (cached && cached.expires_at > Date.now() + 30_000) return cached.access_token;
 
     // OAuth 2.0 client_credentials — sesuai dokumentasi SATUSEHAT.
+    //
+    // `.toString()` WAJIB. Di browser dan Node, URLSearchParams boleh langsung
+    // dipakai sebagai body fetch, tetapi runtime edge EdgeOne menolaknya:
+    //   "Failed to construct Request: only String/ArrayBuffer/ArrayBufferView/
+    //    Blob/ReadableStream/FormData is allowed as the body initializer"
+    // Karena itu body dikirim sebagai string biasa — bentuk yang diterima
+    // semua runtime.
     const body = new URLSearchParams({
       client_id: env.SATUSEHAT_CLIENT_ID,
       client_secret: env.SATUSEHAT_CLIENT_SECRET,
-    });
+    }).toString();
     const res = await fetch(`${AUTH_URL}?grant_type=client_credentials`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
