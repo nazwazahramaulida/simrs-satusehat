@@ -1,7 +1,6 @@
 import { handler, ok } from '../lib/http.js';
 import { readEnv, hasCredentials } from '../lib/env.js';
 import { jwtSecretConfigured } from '../lib/auth.js';
-import { SATUSEHAT_BUILD } from '../lib/satusehat.js';
 
 /**
  * GET /api/health — cek cepat setelah deploy.
@@ -29,9 +28,6 @@ export const onRequest = handler(async (context) => {
 
   return ok({
     status: 'up',
-    // Penanda build: membuktikan versi satusehat.js mana yang benar-benar jalan
-    // di server. Kalau nilainya bukan yang terbaru, berarti deploy belum masuk.
-    satusehat_build: SATUSEHAT_BUILD,
     time: new Date().toISOString(),
     satusehat_mode: env.SATUSEHAT_MODE,
     satusehat_environment: env.SATUSEHAT_ENVIRONMENT,
