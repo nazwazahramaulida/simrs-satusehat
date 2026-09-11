@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Masuk — MediSync Klinik</title>
+  <meta name="description" content="Sistem Informasi Klinik &amp; Rekam Medis Elektronik terintegrasi SATUSEHAT">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#3d2080">
+</head>
+<body>
+  <div class="auth">
+    <section class="auth__brandside">
+      <div class="auth__pulse"></div>
+      <div class="brand brand--light" style="position:relative;z-index:1">
+        <div class="brand__mark" id="brand-mark"></div>
+        <div><div class="brand__name">MediSync</div><div class="brand__sub">Klinik Information System</div></div>
+      </div>
+
+      <div class="auth__headline">
+        <h1>Rekam medis yang tetap bekerja<br>saat jaringan tidak.</h1>
+        <p>Pendaftaran pasien tersimpan lebih dulu di perangkat, lalu dipetakan ke FHIR dan disinkronkan ke SATUSEHAT begitu koneksi kembali tersedia.</p>
+        <div class="auth__points" id="brand-points"></div>
+      </div>
+
+      <div style="position:relative;z-index:1;font-size:12px;color:rgba(255,255,255,.5)">
+        Interoperabilitas mengacu pada standar HL7 FHIR R4 — SATUSEHAT Kementerian Kesehatan RI
+      </div>
+    </section>
+
+    <section class="auth__formside">
+      <div class="auth__card">
+        <div class="brand" style="margin-bottom:26px">
+          <div class="brand__mark" id="brand-mark-2"></div>
+          <div><div class="brand__name">MediSync</div><div class="brand__sub">Klinik Information System</div></div>
+        </div>
+
+        <h2 style="font-size:23px;margin-bottom:6px">Selamat datang kembali</h2>
+        <p style="color:var(--ink-500);margin:0 0 24px;font-size:13.5px">Masuk untuk mengakses modul pendaftaran pasien.</p>
+
+        <div id="alert-slot"></div>
+
+        <form id="login-form" novalidate>
+          <div class="field" id="f-username">
+            <label for="username">Username atau Email</label>
+            <input class="input" id="username" name="username" type="text" autocomplete="username"
+                   placeholder="petugas@klinik.id" required>
+            <div class="field__error"></div>
+          </div>
+
+          <div class="field" id="f-password">
+            <label for="password">Kata Sandi</label>
+            <div class="input-group">
+              <input class="input" id="password" name="password" type="password" autocomplete="current-password"
+                     placeholder="••••••••" required>
+              <button type="button" class="input-group__btn" id="toggle-pw" aria-label="Tampilkan kata sandi"></button>
+            </div>
+            <div class="field__error"></div>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 20px">
+            <label class="checkbox"><input type="checkbox" id="remember"> Ingat saya</label>
+            <a href="#" id="forgot" style="font-size:13px">Lupa kata sandi?</a>
+          </div>
+
+          <button class="btn btn--primary btn--block" type="submit" id="submit">Masuk</button>
+        </form>
+
+        <div style="margin-top:18px;font-size:13px;text-align:center">
+          Pasien? <a href="portal-login.html">Masuk ke Portal Pasien</a>
+        </div>
+
+        <div class="note note--info" style="margin-top:18px">
+          <span id="note-icon"></span>
+          <div>
+            <strong>Akun demo per peran</strong> — kata sandi sama: <span class="mono">admin123</span><br>
+            <span class="mono">admin</span> (semua modul) ·
+            <span class="mono">pendaftaran</span> ·
+            <span class="mono">dokter</span> ·
+            <span class="mono">farmasi</span> ·
+            <span class="mono">kasir</span><br>
+            Diatur lewat <span class="mono">APP_DEMO_PASSWORD</span>; wajib dimatikan sebelum production.
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="js/auth.js"></script>
+</body>
+</html>
