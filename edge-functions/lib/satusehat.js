@@ -286,4 +286,5 @@ function createMockService(env) {
 
 export function createSatusehatService(env) {
   return env.isMock ? createMockService(env) : createLiveService(env);
-}
+/** Penanda versi file ini — dipakai /api/health untuk membuktikan build mana yang jalan. */
+export const SATUSEHAT_BUILD = 'v3-manual-form';
