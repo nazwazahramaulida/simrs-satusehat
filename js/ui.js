@@ -1,8 +1,10 @@
-/** ui.js — komponen UI bersama: app shell, toast, modal, badge, formatter. */
+/** ui.js — komponen UI bersama: app shell, toast, modal, badge, formatter, notification center. */
 import { CONFIG } from './config.js';
 import { getUser, clearSession, getToken, API } from './api.js';
 import { LocalDB } from './db.js';
 import { SyncBus, isOnline, processQueue } from './sync.js';
+// Modul baru: SQLite lokal + sinkronisasi cloud
+import { syncCloud, countCloudPending } from './sync.js';
 
 /* ------------------------------- ikon ------------------------------- */
 export const ICON = {
@@ -14,6 +16,8 @@ export const ICON = {
   plug: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6"/><path d="M6 8h12v3a6 6 0 0 1-12 0V8Z"/><path d="M12 17v5"/></svg>`,
   logout: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg>`,
   menu: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>`,
+  bell: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>`,
+  cloud: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9Z"/></svg>`,
   search: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`,
   check: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>`,
   alert: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>`,
@@ -144,11 +148,103 @@ export function highlightJson(obj) {
     .replace(/:\s*(-?\d+\.?\d*|true|false|null)/g, ': <span class="n">$1</span>');
 }
 
+/* ---------------------------- notification center ---------------------------- */
+const DISMISSED_KEY = 'simrs.dismissedNotifications';
+const notifications = new Map();
+
+function readDismissed() {
+  try {
+    return JSON.parse(sessionStorage.getItem(DISMISSED_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function markDismissed(code) {
+  const list = readDismissed();
+  if (!list.includes(code)) {
+    list.push(code);
+    try {
+      sessionStorage.setItem(DISMISSED_KEY, JSON.stringify(list));
+    } catch {
+      /* storage bisa disabled; abaikan */
+    }
+  }
+}
+
+export const Notify = {
+  push({ code, level = 'warn', title, message, dismissible = true }) {
+    if (!code) return;
+    if (notifications.has(code)) return;
+    if (readDismissed().includes(code)) return;
+    notifications.set(code, { code, level, title, message, dismissible });
+    paintNotifications();
+  },
+  remove(code) {
+    notifications.delete(code);
+    paintNotifications();
+  },
+  dismiss(code) {
+    markDismissed(code);
+    notifications.delete(code);
+    paintNotifications();
+  },
+  clear() {
+    for (const n of notifications.values()) {
+      if (n.dismissible) markDismissed(n.code);
+    }
+    notifications.clear();
+    paintNotifications();
+  },
+  count() {
+    return notifications.size;
+  },
+};
+
+function paintNotifications() {
+  const badge = document.querySelector('[data-notif-badge]');
+  const list = document.querySelector('[data-notif-list]');
+  if (!badge || !list) return;
+
+  const items = [...notifications.values()];
+  const n = items.length;
+  badge.hidden = n === 0;
+  badge.textContent = n > 9 ? '9+' : String(n);
+
+  if (!n) {
+    list.innerHTML = `<div class="notif-empty">
+      <div style="margin-bottom:6px">${ICON.check}</div>
+      Tidak ada notifikasi
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = items
+    .map((x) => {
+      const icon = x.level === 'info' ? ICON.info : ICON.alert;
+      return `<div class="notif-item notif-item--${x.level}" data-code="${esc(x.code)}">
+        <span class="notif-item__icon">${icon}</span>
+        <div class="notif-item__body">
+          <div class="notif-item__title">${esc(x.title || '')}</div>
+          ${x.message ? `<div class="notif-item__msg">${esc(x.message)}</div>` : ''}
+        </div>
+        ${x.dismissible ? `<button class="notif-item__close" title="Sembunyikan" aria-label="Sembunyikan">&times;</button>` : ''}
+      </div>`;
+    })
+    .join('');
+
+  list.querySelectorAll('.notif-item').forEach((el) => {
+    const btn = el.querySelector('.notif-item__close');
+    if (btn) {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        Notify.dismiss(el.dataset.code);
+      };
+    }
+  });
+}
+
 /* ------------------------------- app shell ------------------------------- */
-/**
- * Menu disaring berdasarkan kewenangan peran — dokter tidak melihat menu kasir,
- * dan sebaliknya. `admin` melihat semuanya agar demo bisa dijalankan satu orang.
- */
 const ABILITIES = {
   admin: ['registration', 'doctor', 'pharmacy', 'cashier', 'settings'],
   pendaftaran: ['registration'],
@@ -220,12 +316,30 @@ export function mountShell({ active, title, crumb = '' }) {
         </div>
         <div class="topbar__right">
           <span class="conn conn--online" data-conn>${ICON.wifi}<span>Online</span></span>
+          <button class="btn btn--ghost btn--sm" data-cloud-sync title="Sinkronkan data lokal ke cloud">
+            ${ICON.cloud}<span>Cloud</span>
+            <span class="notif-badge" data-cloud-badge hidden style="position:static;top:auto;right:auto;margin-left:6px;border-color:transparent">0</span>
+          </button>
           <button class="btn btn--ghost btn--sm" data-sync-now>${ICON.refresh}<span>Sync</span></button>
+          <div class="notif-wrap">
+            <button class="notif-btn" data-notif-toggle
+                    aria-label="Notifikasi" aria-haspopup="true" aria-expanded="false" title="Notifikasi">
+              ${ICON.bell}
+              <span class="notif-badge" data-notif-badge hidden>0</span>
+            </button>
+            <div class="notif-panel" data-notif-panel hidden role="dialog" aria-label="Panel notifikasi">
+              <div class="notif-panel__head">
+                <span>Notifikasi</span>
+                <button data-notif-clear type="button">Bersihkan</button>
+              </div>
+              <div class="notif-panel__body" data-notif-list></div>
+            </div>
+          </div>
           <div class="avatar" title="${esc(user.name)}">${fmt.initials(user.name)}</div>
           <button class="iconbtn" style="display:grid" data-logout title="Keluar">${ICON.logout}</button>
         </div>
       </header>
-      <div class="offline-banner">${ICON.wifiOff}<span>Mode Offline — data pendaftaran disimpan di perangkat dan akan disinkronkan otomatis ketika koneksi tersedia.</span></div>
+      <div class="offline-banner">${ICON.wifiOff}<span>Mode Offline — data disimpan di SQLite lokal &amp; antrian perangkat, akan dikirim otomatis ke cloud dan SATUSEHAT saat koneksi tersedia.</span></div>
       <main class="page" id="page"></main>
     </div>`;
 
@@ -236,6 +350,8 @@ export function mountShell({ active, title, crumb = '' }) {
     clearSession();
     location.replace('login.html');
   };
+
+  /* ---------- tombol Sync (Edge Function queue) ---------- */
   shell.querySelector('[data-sync-now]').onclick = async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
@@ -252,6 +368,52 @@ export function mountShell({ active, title, crumb = '' }) {
       );
   };
 
+  /* ---------- tombol Cloud (SQLite → Supabase) ---------- */
+  shell.querySelector('[data-cloud-sync]').onclick = async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const old = btn.innerHTML;
+    btn.innerHTML = `<span class="spinner spinner--dark"></span><span>Cloud…</span>`;
+    const res = await syncCloud();
+    btn.disabled = false;
+    btn.innerHTML = old;
+
+    if (res.skipped && res.offline) {
+      toast('Offline', 'Cloud sync butuh koneksi internet.', 'warn');
+    } else if (res.skipped && res.reason === 'supabase_not_configured') {
+      toast('Supabase belum dikonfigurasi', 'Isi SUPABASE_URL dan SUPABASE_ANON_KEY di js/config.js.', 'error');
+    } else if (res.pushed === 0 && res.failed === 0) {
+      toast('Semua tersinkron', 'Tidak ada data yang perlu dikirim.', 'success');
+    } else {
+      toast('Cloud sync selesai', `${res.pushed} terkirim · ${res.failed} gagal`, res.failed ? 'warn' : 'success');
+    }
+    await refreshCloudBadge();
+  };
+  /* ---------- notification center wiring ---------- */
+  const notifToggle = shell.querySelector('[data-notif-toggle]');
+  const notifPanel = shell.querySelector('[data-notif-panel]');
+  const setPanel = (open) => {
+    notifPanel.hidden = !open;
+    notifToggle.setAttribute('aria-expanded', String(open));
+  };
+  notifToggle.onclick = (e) => {
+    e.stopPropagation();
+    setPanel(notifPanel.hidden);
+  };
+  shell.querySelector('[data-notif-clear]').onclick = (e) => {
+    e.stopPropagation();
+    Notify.clear();
+  };
+  document.addEventListener('click', (e) => {
+    if (notifPanel.hidden) return;
+    if (!notifPanel.contains(e.target) && !notifToggle.contains(e.target)) setPanel(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !notifPanel.hidden) setPanel(false);
+  });
+  paintNotifications();
+
+  /* ---------- connectivity & cloud status paint ---------- */
   const connEl = shell.querySelector('[data-conn]');
   const paint = () => {
     const on = isOnline();
@@ -260,68 +422,72 @@ export function mountShell({ active, title, crumb = '' }) {
   };
   paint();
   SyncBus.on((e) => {
-    if (e.type === 'connectivity') paint();
-    if (e.type === 'done') refreshPendingBadge();
+    if (e.type === 'connectivity') {
+      paint();
+      // Saat koneksi pulih, langsung coba dorong antrian cloud.
+            // Saat koneksi pulih, langsung coba dorong antrian cloud.
+      if (e.online) syncCloud().catch(() => {});
+    }
+    if (e.type === 'done') {
+      refreshPendingBadge();
+      refreshCloudBadge();
+    }
   });
-  refreshPendingBadge();
 
-  // Pill mode integrasi di sidebar (tersedia di semua halaman).
+  // CloudSync bus → perbarui badge jumlah data lokal yang menunggu di-push.
+    // Update badge Cloud saat sync selesai.
+  SyncBus.on((e) => {
+    if (e.type === 'cloud-done' || e.type === 'cloud-item') refreshCloudBadge();
+  });
+
+  refreshPendingBadge();
+  refreshCloudBadge();
+
+  /* ---------- health check → mode pill + notifikasi ---------- */
   API.health()
     .then((res) => {
-      setModePill({ mode: res.data.satusehat_mode, environment: res.data.satusehat_environment });
-      renderConfigWarnings(res.data.warnings || []);
+      const d = res.data;
+      setModePill({ mode: d.satusehat_mode, environment: d.satusehat_environment });
+
+      for (const w of d.warnings || []) {
+        Notify.push({
+          code: w.code,
+          level: 'warn',
+          title: 'Konfigurasi belum siap production',
+          message: w.message,
+        });
+      }
+
+      if (d.satusehat_mode === 'mock') {
+        Notify.push({
+          code: 'SATUSEHAT_MOCK_MODE',
+          level: 'info',
+          title: 'Mock mode aktif',
+          message:
+            'Tidak ada permintaan keluar ke SATUSEHAT. Ubah SATUSEHAT_MODE=live beserta credential sandbox untuk integrasi sungguhan.',
+        });
+      } else {
+        Notify.remove('SATUSEHAT_MOCK_MODE');
+      }
+
+      Notify.remove('SERVER_UNREACHABLE');
     })
     .catch(() => {
       const pill = document.querySelector('[data-mode-pill]');
       if (pill) pill.innerHTML = `${ICON.wifiOff}<span>Server tidak terjangkau</span>`;
+      Notify.push({
+        code: 'SERVER_UNREACHABLE',
+        level: 'err',
+        title: 'Server tidak terjangkau',
+        message: '/api/health tidak dapat dihubungi. Periksa koneksi dan status deployment.',
+        dismissible: false,
+      });
     });
 
   return document.getElementById('page');
 }
 
-/**
- * Peringatan konfigurasi dari /api/health (mis. APP_JWT_SECRET belum diisi).
- * Bisa ditutup per sesi browser supaya tidak mengganggu saat demo.
- */
-export function renderConfigWarnings(warnings) {
-  if (!warnings.length) return;
-  const dismissed = (() => {
-    try {
-      return JSON.parse(sessionStorage.getItem('simrs.dismissedWarnings') || '[]');
-    } catch {
-      return [];
-    }
-  })();
-  const show = warnings.filter((w) => !dismissed.includes(w.code));
-  if (!show.length) return;
-
-  const host = document.querySelector('.offline-banner');
-  if (!host) return;
-  const box = document.createElement('div');
-  box.style.cssText = 'padding:12px 24px 0';
-  box.innerHTML = show
-    .map(
-      (w) => `<div class="note note--warn" style="margin-bottom:10px" data-warn="${esc(w.code)}">
-        ${ICON.alert}<div style="flex:1"><strong>Konfigurasi belum siap production</strong><br>${esc(w.message)}</div>
-        <button class="toast__close" title="Sembunyikan" style="align-self:flex-start">&times;</button>
-      </div>`
-    )
-    .join('');
-  host.after(box);
-
-  box.querySelectorAll('[data-warn]').forEach((el) => {
-    el.querySelector('button').onclick = () => {
-      dismissed.push(el.dataset.warn);
-      try {
-        sessionStorage.setItem('simrs.dismissedWarnings', JSON.stringify(dismissed));
-      } catch {
-        /* abaikan */
-      }
-      el.remove();
-    };
-  });
-}
-
+/* ---------- helper badge: antrian IndexedDB (Edge Function) ---------- */
 export async function refreshPendingBadge() {
   const badge = document.querySelector('[data-pending-badge]');
   if (!badge) return;
@@ -330,6 +496,18 @@ export async function refreshPendingBadge() {
   badge.textContent = String(n);
 }
 
+/* ---------- helper badge: antrian SQLite (Supabase) ---------- */
+export async function refreshCloudBadge() {
+  const badge = document.querySelector('[data-cloud-badge]');
+  if (!badge) return;
+  try {
+    const n = await countCloudPending();
+    badge.hidden = n === 0;
+    badge.textContent = String(n);
+  } catch {
+    badge.hidden = true;
+  }
+}
 export function setModePill(info) {
   const pill = document.querySelector('[data-mode-pill]');
   if (!pill) return;

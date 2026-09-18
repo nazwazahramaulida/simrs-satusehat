@@ -192,4 +192,40 @@ export const LocalDB = {
       });
     }
   },
+    /* ------------------------------------------------------------------ */
+  /* CLOUD SYNC — helper untuk sync ke Supabase                          */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Ambil semua aksi di outbox yang berstatus pending/failed,
+   * diurutkan berdasarkan waktu (agar induk dikirim sebelum anak).
+   */
+  async listOutboxForCloud() {
+    const rows = await this.listOutbox();
+    return rows
+      .filter((r) => r.status === 'pending' || r.status === 'failed')
+      .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  },
+
+  /**
+   * Tandai baris outbox sebagai synced (berhasil terkirim ke Supabase).
+   * Baris ini kemudian TIDAK akan dihapus, tapi ditandai — supaya bisa
+   * ditampilkan di UI sebagai riwayat.
+   */
+  async markOutboxSynced(id) {
+    return this.updateOutbox(id, { status: 'synced', error: null });
+  },
+
+  /**
+   * Tandai baris outbox sebagai failed dengan pesan error.
+   */
+  async markOutboxFailed(id, message) {
+    const item = (await this.listOutbox()).find((r) => r.client_request_id === id);
+    return this.updateOutbox(id, {
+      status: 'failed',
+      attempts: (item?.attempts || 0) + 1,
+      error: String(message || '').slice(0, 500),
+    });
+  },
 };
+

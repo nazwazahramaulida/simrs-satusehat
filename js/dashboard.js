@@ -87,9 +87,7 @@ function renderIntegration(s, localPending) {
       <dt>Sedang diproses</dt><dd>${s.syncing} pasien</dd>
     </dl>
     ${
-      mock
-        ? `<div class="note note--info" style="margin-top:14px">${ICON.info}<div>Mock mode aktif — tidak ada permintaan keluar ke SATUSEHAT. Ubah <span class="mono">SATUSEHAT_MODE=live</span> beserta credential sandbox untuk integrasi sungguhan.</div></div>`
-        : !i.credentials_configured
+      !mock && !i.credentials_configured
         ? `<div class="note note--warn" style="margin-top:14px">${ICON.alert}<div>Credential SATUSEHAT belum lengkap di server. Isi Organization ID, Client ID, dan Client Secret sebagai secret Edge Function.</div></div>`
         : ''
     }`;

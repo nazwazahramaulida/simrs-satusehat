@@ -1,6 +1,6 @@
 import { LocalDB, uuid } from './db.js';
-import { startAutoSync, isOnline, submit } from './sync.js';
-import { mountShell, requireAuth, ICON, esc, toast, modal, refreshPendingBadge } from './ui.js';
+import { startAutoSync, isOnline, submit, syncCloud, countCloudPending } from './sync.js';
+import { mountShell, requireAuth, ICON, esc, toast, modal, refreshPendingBadge, refreshCloudBadge } from './ui.js';
 import { validatePatient, PROVINCES } from './validation.js';
 
 if (!requireAuth()) throw new Error('unauthenticated');
@@ -29,7 +29,7 @@ const select = (name, options) =>
 
 page.innerHTML = `
   <div class="page__head">
-    <div><h1>Pendaftaran Pasien Baru</h1><p>Data disimpan ke database lokal terlebih dahulu, lalu dipetakan ke FHIR dan disinkronkan ke SATUSEHAT.</p></div>
+    <div><h1>Pendaftaran Pasien Baru</h1><p>Data disimpan ke database lokal terlebih dahulu, lalu disinkronkan ke cloud (Supabase) dan SATUSEHAT.</p></div>
     <div class="page__actions"><a class="btn btn--ghost" href="patients.html">${ICON.users}<span>Daftar Pasien</span></a></div>
   </div>
 
@@ -139,6 +139,7 @@ document.getElementById('nik').addEventListener('input', (e) => {
 const STEPS = [
   ['validate', 'Memvalidasi data'],
   ['local', 'Menyimpan ke database lokal'],
+  ['cloud', 'Mengirim ke cloud (Supabase)'],
   ['check', 'Mencari pasien di SATUSEHAT'],
   ['sync', 'Sinkronisasi & menyimpan IHS Number'],
   ['done', 'Selesai'],
@@ -147,7 +148,7 @@ const STEPS = [
 function openProgress() {
   const m = modal({
     title: 'Memproses Pendaftaran',
-    maxWidth: '520px',
+    maxWidth: '560px',
     body: `<div class="steps" id="steps">${STEPS.map(
       (s, i) => `<div class="step" data-step="${s[0]}"><span class="step__dot">${i + 1}</span><span>${s[1]}</span></div>`
     ).join('')}</div><div id="progress-result" style="margin-top:16px"></div>`,
@@ -197,14 +198,21 @@ form.addEventListener('submit', async (e) => {
   await delay(280);
   p.set('validate', 'done');
 
-  // ---- 1. SELALU antrikan di perangkat dulu (offline-first) ----
-  // submit() menulis ke IndexedDB sebelum menyentuh jaringan, jadi data tidak
-  // hilang meski browser ditutup tepat setelah tombol ditekan.
+  /* ================================================================
+     STEP 1 — SELALU simpan ke IndexedDB dulu (offline-first).
+     submit() menulis ke outbox SEBELUM menyentuh jaringan, jadi data
+     tidak hilang meski browser ditutup tepat setelah tombol ditekan.
+     ================================================================ */
   const clientRequestId = uuid();
   p.set('local', 'active');
   const res = await submit({
     path: '/api/patients',
-    body: { ...data, id: clientRequestId, client_request_id: clientRequestId, source: isOnline() ? 'online' : 'offline' },
+    body: {
+      ...data,
+      id: clientRequestId,
+      client_request_id: clientRequestId,
+      source: isOnline() ? 'online' : 'offline',
+    },
     label: data.name,
     entity: 'patient',
   });
@@ -212,21 +220,50 @@ form.addEventListener('submit', async (e) => {
   p.set('local', 'done');
   refreshPendingBadge();
 
-  // ---- 2. Offline atau server tak terjangkau → berhenti di sini, data aman ----
+  /* ================================================================
+     STEP 2 — Kalau offline atau Edge Function tidak terjangkau:
+     berhenti di sini. Data sudah aman di IndexedDB, dan akan
+     dikirim ke Supabase & SATUSEHAT otomatis saat koneksi pulih.
+     ================================================================ */
   if (res.offline || res.queued) {
+    p.set('cloud', 'error');
     p.set('check', 'error');
+    p.set('sync', 'error');
+    p.set('done', 'error');
     p.result(
       `<div class="note note--warn">${ICON.alert}<div><strong>Data tersimpan di perangkat.</strong><br>
         ${esc(res.message || 'Perangkat sedang offline.')}<br>
-        Sinkronisasi SATUSEHAT akan dilakukan otomatis ketika koneksi tersedia.
-        Nomor rekam medis final diterbitkan saat sinkronisasi berhasil.</div></div>`,
+        Sinkronisasi ke cloud (Supabase) dan SATUSEHAT akan dilakukan otomatis
+        ketika koneksi tersedia.</div></div>`,
       `<a class="btn btn--ghost" href="sync-status.html">Lihat Antrian</a><button class="btn btn--primary" id="again">Daftarkan Pasien Lain</button>`
     );
     bindAfter(p, btn);
     return;
   }
 
-  // ---- 3. Terkirim ----
+  /* ================================================================
+     STEP 3 — Edge Function sukses. Sekarang push ke Supabase.
+     ================================================================ */
+  p.set('cloud', 'active');
+  try {
+    const cloudRes = await syncCloud();
+    if (cloudRes.pushed > 0 || (cloudRes.skipped && !cloudRes.offline)) {
+      p.set('cloud', 'done');
+    } else if (cloudRes.failed > 0) {
+      p.set('cloud', 'error');
+    } else {
+      p.set('cloud', 'done');
+    }
+    await refreshCloudBadge();
+  } catch (err) {
+    p.set('cloud', 'error');
+    console.warn('[Cloud] Gagal sync:', err.message);
+    // Tidak fatal — data sudah di IndexedDB dan akan dicoba lagi otomatis.
+  }
+
+  /* ================================================================
+     STEP 4 — Hasil dari Edge Function (untuk SATUSEHAT).
+     ================================================================ */
   p.set('check', 'done');
   const { patient, sync, duplicated } = res.data;
   await LocalDB.cachePatient(patient);
@@ -246,7 +283,8 @@ form.addEventListener('submit', async (e) => {
     p.result(
       `<div class="note note--ok">${ICON.check}<div><strong>Pasien berhasil didaftarkan.</strong><br>
         No. RM: <span class="mono">${esc(patient.medical_record_number)}</span><br>
-        SATUSEHAT IHS Number: <span class="mono">${esc(patient.ihs_number)}</span>
+        SATUSEHAT IHS Number: <span class="mono">${esc(patient.ihs_number)}</span><br>
+        Tersimpan di cloud (Supabase) dan database lokal.
         ${sync && sync.mode === 'mock' ? '<br><span class="badge badge--mock">MOCK MODE</span> nomor ini simulasi, bukan dari Kemenkes.' : ''}
       </div></div>`,
       `<a class="btn btn--ghost" href="${link}">Lihat Detail</a><button class="btn btn--primary" id="again">Daftarkan Pasien Lain</button>`
@@ -254,10 +292,10 @@ form.addEventListener('submit', async (e) => {
     toast('Pendaftaran berhasil', `IHS Number ${patient.ihs_number}`, 'success');
   } else {
     p.result(
-      `<div class="note note--warn">${ICON.alert}<div><strong>Data tersimpan, sinkronisasi belum berhasil.</strong><br>
+      `<div class="note note--warn">${ICON.alert}<div><strong>Data tersimpan, sinkronisasi SATUSEHAT belum berhasil.</strong><br>
         No. RM: <span class="mono">${esc(patient.medical_record_number)}</span><br>
         ${esc((sync && sync.message) || patient.sync_error || '')}<br>
-        Data lokal tetap utuh dan akan dicoba lagi otomatis.</div></div>`,
+        Data lokal &amp; cloud tetap utuh dan akan dicoba lagi otomatis.</div></div>`,
       `<a class="btn btn--ghost" href="${link}">Lihat Detail</a><button class="btn btn--primary" id="again">Daftarkan Pasien Lain</button>`
     );
     toast('Tersimpan, menunggu sinkronisasi', 'Antrian akan diproses ulang otomatis.', 'warn');
@@ -316,7 +354,11 @@ document.getElementById('btn-demo').onclick = () => {
 function paintOfflineHint() {
   document.getElementById('offline-hint').innerHTML = isOnline()
     ? ''
-    : `<div class="note note--warn" style="margin-bottom:16px">${ICON.alert}<div><strong>Mode Offline.</strong> Pendaftaran tetap bisa dilakukan — data disimpan di perangkat dan masuk antrian sinkronisasi.</div></div>`;
+    : `<div class="note note--warn" style="margin-bottom:16px">${ICON.alert}<div>
+        <strong>Mode Offline.</strong> Pendaftaran tetap bisa dilakukan — data disimpan
+        di perangkat dan dikirim otomatis ke cloud (Supabase) dan SATUSEHAT saat
+        koneksi tersedia.
+      </div></div>`;
 }
 window.addEventListener('online', paintOfflineHint);
 window.addEventListener('offline', paintOfflineHint);
