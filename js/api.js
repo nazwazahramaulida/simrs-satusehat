@@ -135,4 +135,8 @@ export const API = {
 
   integrationStatus: () => request('/api/integration/status'),
   testConnection: (body = {}) => request('/api/integration/test', { method: 'POST', body, timeout: 40000 }),
+  // Uji KIRIM — benar-benar menulis Encounter + Condition ke sandbox SATUSEHAT.
+  probeSatusehat: (body = {}) => request('/api/integration/probe', { method: 'POST', body, timeout: 60000 }),
+  // Ambil pasien sungguhan dari Master Patient Index SATUSEHAT berdasarkan NIK.
+  importFromSatusehat: (body = {}) => request('/api/integration/import', { method: 'POST', body, timeout: 60000 }),
 };
