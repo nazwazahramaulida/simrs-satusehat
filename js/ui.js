@@ -33,6 +33,8 @@ export const ICON = {
   idcard: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="8.5" cy="11" r="2"/><path d="M5 16c.7-1.5 2-2.2 3.5-2.2S11.3 14.5 12 16M15 10h4M15 14h3"/></svg>`,
   code: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18-6-6 6-6M15 6l6 6-6 6"/></svg>`,
   back: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>`,
+  radiology: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>`,
+  therapy: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>`,
 };
 
 /* ------------------------------ formatter ------------------------------ */
@@ -246,9 +248,9 @@ function paintNotifications() {
 
 /* ------------------------------- app shell ------------------------------- */
 const ABILITIES = {
-  admin: ['registration', 'doctor', 'pharmacy', 'cashier', 'settings'],
+  admin: ['registration', 'doctor', 'pharmacy', 'cashier', 'radiology', 'therapy', 'settings'],
   pendaftaran: ['registration'],
-  dokter: ['doctor'],
+  dokter: ['doctor', 'radiology', 'therapy'],
   farmasi: ['pharmacy'],
   kasir: ['cashier'],
 };
@@ -260,6 +262,8 @@ const NAV = [
   { key: 'doctor', href: 'doctor.html', label: 'Poli / Dokter', icon: ICON.stethoscope, ability: 'doctor' },
   { key: 'pharmacy', href: 'pharmacy.html', label: 'Farmasi', icon: ICON.pill, ability: 'pharmacy' },
   { key: 'cashier', href: 'cashier.html', label: 'Kasir', icon: ICON.cash, ability: 'cashier' },
+  { key: 'radiology', href: 'radiology.html', label: 'Radiologi', icon: ICON.radiology, ability: 'radiology' },
+  { key: 'therapy', href: 'therapy.html', label: 'Terapi', icon: ICON.therapy, ability: 'therapy' },
   { key: 'accounts', href: 'accounts.html', label: 'Verifikasi Akun Pasien', icon: ICON.idcard, ability: 'registration' },
   { key: 'sync', href: 'sync-status.html', label: 'Status Sinkronisasi', icon: ICON.refresh, ability: null },
   { key: 'integration', href: 'integration.html', label: 'Pengaturan Integrasi', icon: ICON.plug, ability: 'settings' },

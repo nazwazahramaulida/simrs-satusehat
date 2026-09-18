@@ -23,6 +23,8 @@ import {
   toFhirCondition,
   toFhirMedicationRequests,
   toFhirMedicationDispenses,
+  toFhirServiceRequest,
+  toFhirProcedure,
   assertReadyForSatusehat,
 } from './fhir.js';
 import { bool } from './env.js';
@@ -126,6 +128,16 @@ async function resolveContext(repo, service, kind, record, env) {
   }
 
   if (kind === 'Condition' || kind === 'MedicationRequest') {
+    const enc = await repo.getRecord('encounters', record.encounter_id);
+    const patient = enc ? await repo.getPatient(enc.patient_id) : null;
+    ctx.patientIhs = patient && patient.ihs_number;
+    ctx.encounterId = enc && enc.satusehat_id;
+    ctx.practitionerId = await resolvePractitionerId(service, env, enc && enc.doctor_nik);
+    ctx.patientReady = Boolean(ctx.patientIhs && ctx.encounterId);
+    return ctx;
+  }
+
+    if (kind === 'ServiceRequest' || kind === 'Procedure') {
     const enc = await repo.getRecord('encounters', record.encounter_id);
     const patient = enc ? await repo.getPatient(enc.patient_id) : null;
     ctx.patientIhs = patient && patient.ihs_number;
@@ -287,6 +299,12 @@ export async function syncClinicalRecord(repo, service, collection, recordOrId, 
     } else if (kind === 'MedicationDispense') {
       satusehatIds = await pushMulti(service, 'MedicationDispense', toFhirMedicationDispenses(record, ctx));
       satusehatId = satusehatIds[0] || null;
+    } else if (kind === 'ServiceRequest') {
+      const created = await service.createResource('ServiceRequest', toFhirServiceRequest(record, ctx));
+      satusehatId = created.id;
+    } else if (kind === 'Procedure') {
+      const created = await service.createResource('Procedure', toFhirProcedure(record, ctx));
+      satusehatId = created.id;
     }
 
     const updated = await repo.updateRecord(collection, record.id, {

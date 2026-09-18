@@ -29,6 +29,8 @@ export const SYNCABLE_RESOURCES = [
   { collection: 'conditions', label: 'Diagnosis', fhir: 'Condition' },
   { collection: 'prescriptions', label: 'Resep', fhir: 'MedicationRequest' },
   { collection: 'dispenses', label: 'Penyerahan Obat', fhir: 'MedicationDispense' },
+  { collection: 'radiology_orders', label: 'Radiologi', fhir: 'ServiceRequest' },
+  { collection: 'therapies', label: 'Terapi/Tindakan', fhir: 'Procedure' },
 ];
 
 export function getStore(env) {
