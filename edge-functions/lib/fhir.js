@@ -143,6 +143,35 @@ const ENCOUNTER_STATUS = {
   cancelled: 'cancelled',
 };
 
+/**
+ * statusHistory — WAJIB menurut Implementation Guide SATUSEHAT.
+ *
+ * IG meminta riwayat tiga status: `arrived`, `in-progress`, dan `finished`,
+ * masing-masing dengan periodenya. Riwayat disusun dari data yang benar-benar
+ * dimiliki record (waktu mulai & selesai), dan hanya sampai status yang sudah
+ * tercapai — kunjungan yang baru didaftarkan tidak dibuat seolah sudah selesai.
+ */
+function buildStatusHistory(enc) {
+  const start = enc.started_at;
+  const end = enc.finished_at;
+  const current = ENCOUNTER_STATUS[enc.status] || 'in-progress';
+  const history = [];
+
+  // Pasien tiba — selalu ada, karena kunjungan pasti dimulai dari pendaftaran.
+  history.push({ status: 'arrived', period: { start, ...(current !== 'arrived' ? { end: start } : {}) } });
+
+  if (current === 'in-progress' || current === 'finished') {
+    history.push({ status: 'in-progress', period: { start, ...(end ? { end } : {}) } });
+  }
+  if (current === 'finished' && end) {
+    history.push({ status: 'finished', period: { start: end, end } });
+  }
+  if (current === 'cancelled') {
+    history.push({ status: 'cancelled', period: { start, ...(end ? { end } : {}) } });
+  }
+  return history;
+}
+
 export function toFhirEncounter(enc, ctx) {
   return {
     resourceType: 'Encounter',
@@ -153,6 +182,7 @@ export function toFhirEncounter(enc, ctx) {
       },
     ],
     status: ENCOUNTER_STATUS[enc.status] || 'in-progress',
+    statusHistory: buildStatusHistory(enc),
     class: {
       system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode',
       code: 'AMB',
@@ -176,6 +206,15 @@ export function toFhirEncounter(enc, ctx) {
       },
     ],
     period: { start: enc.started_at, ...(enc.finished_at ? { end: enc.finished_at } : {}) },
+    // location — WAJIB menurut IG SATUSEHAT: ruang/poli tempat pasien diperiksa.
+    // ctx.locationId berasal dari resource Location milik organisasi ini di
+    // SATUSEHAT (dicari lewat GET /Location?organization=...). Kalau belum ada,
+    // syncEngine menundanya — tidak pernah diisi id karangan.
+    location: [
+      {
+        location: { reference: `Location/${ctx.locationId}`, display: enc.poli || 'Poli Umum' },
+      },
+    ],
     serviceProvider: { reference: `Organization/${ctx.orgId}` },
   };
 }
@@ -321,6 +360,13 @@ export function assertReadyForSatusehat(kind, record, ctx, env) {
         'identitas dokter — isi SATUSEHAT_PRACTITIONER_NIK (NIK dokter, nanti dicari otomatis lewat GET /Practitioner) atau SATUSEHAT_PRACTITIONER_ID bila IHS Number dokter sudah diketahui'
       );
     }
+  }
+  // Encounter.location wajib menurut IG SATUSEHAT — tanpa Location ID yang sah,
+  // kunjungan pasti ditolak. Lebih baik ditahan di sini dengan pesan yang jelas.
+  if (kind === 'Encounter' && !ctx.locationId) {
+    missing.push(
+      'ID Location (ruang/poli) di SATUSEHAT — isi SATUSEHAT_LOCATION_ID, atau biarkan aplikasi mencarinya sendiri lewat GET /Location?organization=…'
+    );
   }
   if (['Condition', 'MedicationRequest', 'MedicationDispense', 'ServiceRequest', 'DiagnosticReport', 'Procedure'].includes(kind) && !ctx.encounterId) {
     missing.push('ID Encounter di SATUSEHAT (sinkronkan kunjungan lebih dulu)');
