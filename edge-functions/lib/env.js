@@ -35,12 +35,29 @@ const DEFAULTS = {
   SATUSEHAT_PRACTITIONER_ID: '',
   SATUSEHAT_PRACTITIONER_NIK: '',
 
+  // ID Location (ruang/poli) di SATUSEHAT. Encounter.location WAJIB menurut IG.
+  // Kosongkan untuk dicari otomatis lewat GET /Location?organization=…
+  SATUSEHAT_LOCATION_ID: '',
+
+  // POST /Location — untuk mendaftarkan ruang/poli baru. Default OFF supaya
+  // tidak pernah terjadi tanpa disengaja.
+  SATUSEHAT_ALLOW_LOCATION_CREATE: 'false',
+
+  // Daftar NIK dummy sandbox dari Developer Portal, dipisah koma. Dipakai
+  // tombol "Ambil Pasien dari SATUSEHAT" agar data contoh benar-benar berasal
+  // dari Kemenkes, bukan dikarang aplikasi ini.
+  SATUSEHAT_SANDBOX_NIKS: '',
+
   // ---- data layer ----
   DB_DRIVER: 'memory', // 'memory' | 'kv' | 'supabase'
   DB_FILE: '', // hanya dipakai driver memory di dev server (persist ke file JSON)
   SUPABASE_URL: '',
   SUPABASE_SERVICE_KEY: '',
   KV_NAMESPACE: 'simrs', // nama binding KV di EdgeOne
+
+  // Isi database dengan data contoh saat kosong (hanya untuk DB_DRIVER=memory).
+  // Set 'false' kalau ingin aplikasi mulai benar-benar kosong.
+  DEMO_SEED: 'true',
 
   // ---- terminologi (ICD-10 & KFA) ----
   // 'local' = dataset yang dibundel (selalu jalan, termasuk saat offline)
