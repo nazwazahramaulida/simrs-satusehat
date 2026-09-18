@@ -313,7 +313,7 @@ export function toFhirMedicationDispenses(disp, ctx) {
  */
 export function assertReadyForSatusehat(kind, record, ctx, env) {
   const missing = [];
-  if (['Encounter', 'Condition', 'MedicationRequest', 'MedicationDispense'].includes(kind)) {
+  if (['Encounter', 'Condition', 'MedicationRequest', 'MedicationDispense', 'ServiceRequest', 'DiagnosticReport', 'Procedure'].includes(kind)) {
     if (!ctx.patientIhs) missing.push('IHS Number pasien (sinkronkan pasien lebih dulu)');
     if (!ctx.orgId) missing.push('SATUSEHAT_ORGANIZATION_ID');
     if (!ctx.practitionerId) {
@@ -322,7 +322,7 @@ export function assertReadyForSatusehat(kind, record, ctx, env) {
       );
     }
   }
-  if (['Condition', 'MedicationRequest', 'MedicationDispense'].includes(kind) && !ctx.encounterId) {
+  if (['Condition', 'MedicationRequest', 'MedicationDispense', 'ServiceRequest', 'DiagnosticReport', 'Procedure'].includes(kind) && !ctx.encounterId) {
     missing.push('ID Encounter di SATUSEHAT (sinkronkan kunjungan lebih dulu)');
   }
 
@@ -351,4 +351,81 @@ export function extractIhsFromBundle(bundle) {
   }
   const entry = bundle.entry.find((e) => e.resource && e.resource.resourceType === 'Patient');
   return entry ? entry.resource.id || null : null;
+}
+
+/* ==================================================================== */
+/* RADIOLOGI & TERAPI — mengikuti pola resource klinis di atas           */
+/* ==================================================================== */
+
+export function toFhirServiceRequest(order, ctx) {
+  return {
+    resourceType: 'ServiceRequest',
+    identifier: [
+      {
+        system: `http://sys-ids.kemkes.go.id/service-request/${ctx.orgId}`,
+        value: order.id,
+      },
+    ],
+    status: order.status === 'completed' ? 'completed' : 'active',
+    intent: 'order',
+    category: [
+      {
+        coding: [
+          {
+            system: 'http://snomed.info/sct',
+            code: '363679005',
+            display: 'Imaging',
+          },
+        ],
+      },
+    ],
+    code: { text: order.jenis_pemeriksaan },
+    subject: { reference: `Patient/${ctx.patientIhs}` },
+    encounter: { reference: `Encounter/${ctx.encounterId}` },
+    authoredOn: order.requested_at,
+    requester: { reference: `Practitioner/${ctx.practitionerId}`, display: order.requested_by },
+    reasonCode: [{ text: order.catatan_klinis }],
+  };
+}
+
+export function toFhirDiagnosticReport(order, ctx) {
+  return {
+    resourceType: 'DiagnosticReport',
+    identifier: [
+      {
+        system: `http://sys-ids.kemkes.go.id/diagnostic-report/${ctx.orgId}`,
+        value: order.id,
+      },
+    ],
+    status: 'final',
+    code: { text: order.jenis_pemeriksaan },
+    subject: { reference: `Patient/${ctx.patientIhs}` },
+    encounter: { reference: `Encounter/${ctx.encounterId}` },
+    effectiveDateTime: order.completed_at,
+    issued: order.completed_at,
+    performer: [{ reference: `Practitioner/${ctx.practitionerId}`, display: order.radiolog }],
+    conclusion: order.hasil,
+    ...(ctx.serviceRequestId ? { basedOn: [{ reference: `ServiceRequest/${ctx.serviceRequestId}` }] } : {}),
+  };
+}
+
+export function toFhirProcedure(therapy, ctx) {
+  return {
+    resourceType: 'Procedure',
+    identifier: [
+      {
+        system: `http://sys-ids.kemkes.go.id/procedure/${ctx.orgId}`,
+        value: therapy.id,
+      },
+    ],
+    status: therapy.status === 'completed' ? 'completed' : 'in-progress',
+    code: { text: therapy.nama_tindakan },
+    subject: { reference: `Patient/${ctx.patientIhs}` },
+    encounter: { reference: `Encounter/${ctx.encounterId}` },
+    performedDateTime: therapy.completed_at || therapy.created_at,
+    performer: [
+      { actor: { reference: `Practitioner/${ctx.practitionerId}`, display: therapy.dilakukan_oleh } },
+    ],
+    ...(therapy.catatan ? { note: [{ text: therapy.catatan }] } : {}),
+  };
 }

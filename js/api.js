@@ -116,6 +116,18 @@ export const API = {
   getPrescription: (id) => request(`/api/prescriptions/${id}`),
   createPrescription: (body) => request('/api/prescriptions', { method: 'POST', body, timeout: 30000 }),
   dispensePrescription: (id, body) => request(`/api/prescriptions/${id}`, { method: 'PATCH', body, timeout: 30000 }),
+  
+  /* ---------- radiologi (ServiceRequest) ---------- */
+  listRadiologyOrders: (params = {}) => request(`/api/service-requests?${new URLSearchParams(params)}`),
+  getRadiologyOrder: (id) => request(`/api/service-requests/${id}`),
+  createRadiologyOrder: (body) => request('/api/service-requests', { method: 'POST', body, timeout: 30000 }),
+  updateRadiologyOrder: (id, body) => request(`/api/service-requests/${id}`, { method: 'PATCH', body, timeout: 30000 }),
+
+  /* ---------- terapi / tindakan (Procedure) ---------- */
+  listTherapies: (params = {}) => request(`/api/procedures?${new URLSearchParams(params)}`),
+  getTherapy: (id) => request(`/api/procedures/${id}`),
+  createTherapy: (body) => request('/api/procedures', { method: 'POST', body, timeout: 30000 }),
+  updateTherapy: (id, body) => request(`/api/procedures/${id}`, { method: 'PATCH', body, timeout: 30000 }),
 
   /* ---------- kasir ---------- */
   listInvoices: (params = {}) => request(`/api/invoices?${new URLSearchParams(params)}`),
