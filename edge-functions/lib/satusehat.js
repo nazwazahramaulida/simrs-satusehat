@@ -52,7 +52,17 @@ function createLiveService(env) {
     if (cached && cached.expires_at > Date.now() + 30_000) return cached.access_token;
 
     // OAuth 2.0 client_credentials — sesuai dokumentasi SATUSEHAT.
-    const body = new URLSearchParams({
+    //
+    // Body disusun MANUAL sebagai string. URLSearchParams sengaja TIDAK dipakai:
+    // runtime edge EdgeOne menolaknya sebagai body fetch dengan
+    //   "Failed to construct Request: only String/ArrayBuffer/ArrayBufferView/
+    //    Blob/ReadableStream/FormData is allowed as the body initializer"
+    // String biasa diterima semua runtime tanpa pengecualian.
+    const form = (obj) =>
+      Object.keys(obj)
+        .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(obj[k])}`)
+        .join('&');
+    const body = form({
       client_id: env.SATUSEHAT_CLIENT_ID,
       client_secret: env.SATUSEHAT_CLIENT_SECRET,
     });
@@ -139,6 +149,47 @@ function createLiveService(env) {
         name: entry && entry.resource.name && entry.resource.name[0] ? entry.resource.name[0].text : null,
         bundle,
       };
+    },
+
+    /**
+     * Cari Location (ruang/poli) milik organisasi ini.
+     *
+     * Encounter.location wajib menurut IG SATUSEHAT, dan ID-nya harus ID
+     * Location yang benar-benar terdaftar — tidak boleh dikarang. Fasyankes
+     * mendaftarkan Location-nya sendiri, jadi pola normalnya: cari dulu.
+     *
+     * GET /Location?organization=Organization/{orgId}
+     */
+    async searchLocationByOrganization(orgId) {
+      const bundle = await fhir(`/Location?organization=Organization/${encodeURIComponent(orgId)}`);
+      const entry =
+        bundle && Array.isArray(bundle.entry)
+          ? bundle.entry.find((e) => e.resource && e.resource.resourceType === 'Location')
+          : null;
+      const id = entry ? entry.resource.id : null;
+      return {
+        found: Boolean(id),
+        location_id: id,
+        name: entry ? entry.resource.name || null : null,
+        total: bundle && typeof bundle.total === 'number' ? bundle.total : null,
+        bundle,
+      };
+    },
+
+    /**
+     * Daftarkan Location baru. Dipakai sekali bila fasyankes belum punya
+     * ruang/poli terdaftar. Dikunci di balik flag agar tidak pernah terjadi
+     * tanpa disengaja.
+     */
+    async createLocation(resource) {
+      if (!bool(env.SATUSEHAT_ALLOW_LOCATION_CREATE)) {
+        const err = new Error(
+          'POST /Location dinonaktifkan. Aktifkan SATUSEHAT_ALLOW_LOCATION_CREATE=true hanya bila Anda memang ingin mendaftarkan ruang/poli baru untuk organisasi ini.'
+        );
+        err.code = 'LOCATION_CREATE_DISABLED';
+        throw err;
+      }
+      return fhir('/Location', { method: 'POST', body: JSON.stringify(resource) });
     },
 
     async createPatient(resource) {
@@ -237,6 +288,27 @@ function createMockService(env) {
         name: 'dr. Simulasi (mock)',
         bundle: { resourceType: 'Bundle', total: 1, entry: [{ resource: { resourceType: 'Practitioner', id } }] },
       };
+    },
+
+    async searchLocationByOrganization() {
+      await delay(250);
+      return {
+        found: true,
+        location_id: 'MOCK-LOCATION-01',
+        name: 'Poli Umum (mock)',
+        total: 1,
+        bundle: { resourceType: 'Bundle', total: 1, entry: [{ resource: { resourceType: 'Location', id: 'MOCK-LOCATION-01' } }] },
+      };
+    },
+
+    async createLocation(resource) {
+      await delay(300);
+      if (!bool(env.SATUSEHAT_ALLOW_LOCATION_CREATE)) {
+        const err = new Error('POST /Location dinonaktifkan (mock mengikuti aturan produksi).');
+        err.code = 'LOCATION_CREATE_DISABLED';
+        throw err;
+      }
+      return { ...resource, id: 'MOCK-LOCATION-01', meta: { source: 'mock' } };
     },
 
     async createPatient(resource) {
