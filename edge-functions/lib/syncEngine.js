@@ -71,6 +71,41 @@ async function resolvePractitionerId(service, env, doctorNik) {
   return env.isMock ? 'MOCK-PRACTITIONER-01' : '';
 }
 
+/** Cache Location ID per organisasi (per isolate). */
+const locationCache = new Map();
+
+/**
+ * Tentukan ID Location (ruang/poli) — WAJIB ada di Encounter menurut IG.
+ *
+ * Urutan:
+ *   1. SATUSEHAT_LOCATION_ID — kalau sudah diketahui, dipakai langsung
+ *   2. Cari milik organisasi ini: GET /Location?organization=Organization/{id}
+ *   3. Mock → nilai simulasi
+ *
+ * Tidak pernah mengarang ID. Kalau organisasi belum punya Location terdaftar,
+ * fungsi ini mengembalikan kosong dan Encounter ditunda dengan pesan jelas.
+ */
+async function resolveLocationId(service, env) {
+  if (env.SATUSEHAT_LOCATION_ID) return env.SATUSEHAT_LOCATION_ID;
+  if (env.isMock) return 'MOCK-LOCATION-01';
+
+  const orgId = env.SATUSEHAT_ORGANIZATION_ID;
+  if (!orgId) return '';
+  if (locationCache.has(orgId)) return locationCache.get(orgId) || '';
+
+  try {
+    const found = await service.searchLocationByOrganization(orgId);
+    if (found.found) {
+      locationCache.set(orgId, found.location_id);
+      return found.location_id;
+    }
+    locationCache.set(orgId, null);
+  } catch {
+    // Gagal jaringan → jangan di-cache, biar dicoba lagi nanti.
+  }
+  return '';
+}
+
 function baseCtx(env) {
   return {
     orgId: env.SATUSEHAT_ORGANIZATION_ID || (env.isMock ? 'MOCK-ORG-0000000000' : ''),
@@ -85,6 +120,7 @@ async function resolveContext(repo, service, kind, record, env) {
     const patient = await repo.getPatient(record.patient_id);
     ctx.patientIhs = patient && patient.ihs_number;
     ctx.practitionerId = await resolvePractitionerId(service, env, record.doctor_nik);
+    ctx.locationId = await resolveLocationId(service, env);
     ctx.patientReady = Boolean(ctx.patientIhs);
     return ctx;
   }
