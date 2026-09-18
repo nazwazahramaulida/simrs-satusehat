@@ -5,7 +5,7 @@
  * TIDAK PERNAH di-cache: data operasional harus selalu segar, dan
  * penyimpanan offline sudah ditangani IndexedDB (lihat js/db.js).
  */
-const CACHE = 'simrs-shell-v2';
+const CACHE = 'simrs-shell-v4';
 const SHELL = [
   './',
   './login.html',
@@ -43,6 +43,9 @@ const SHELL = [
   './js/portal-auth.js',
   './js/portal.js',
   './manifest.webmanifest',
+    // sql.js — SQLite WASM
+  'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm',
 ];
 
 self.addEventListener('install', (e) => {
@@ -61,17 +64,38 @@ self.addEventListener('fetch', (e) => {
 
   // stale-while-revalidate untuk aset shell
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      const network = fetch(e.request)
-        .then((res) => {
-          if (res && res.ok && url.origin === location.origin) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(e.request, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    (async () => {
+      const cached = await caches.match(e.request);
+
+      // Kalau ada di cache → return cache sambil revalidate di background
+      if (cached) {
+        fetch(e.request)
+          .then((res) => {
+            if (res && res.ok && url.origin === location.origin) {
+              const copy = res.clone();
+              caches.open(CACHE).then((c) => c.put(e.request, copy));
+            }
+          })
+          .catch(() => { /* offline; biarkan cache yang dipakai */ });
+        return cached;
+      }
+
+      // Tidak ada di cache → coba network
+      try {
+        const res = await fetch(e.request);
+        if (res && res.ok && url.origin === location.origin) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy));
+        }
+        return res;
+      } catch (err) {
+        // Network gagal & tidak ada cache → kembalikan Response valid (bukan undefined)
+        return new Response('Offline — sumber daya tidak tersedia di cache.', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+      }
+    })()
   );
 });
