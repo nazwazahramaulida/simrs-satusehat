@@ -3,14 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Prototype SIM Klinik / RME offline-first dengan integrasi SATUSEHAT — siap deploy ke Tencent EdgeOne Pages",
+  "description": "Prototype SIM Klinik / RME offline-first dengan integrasi SATUSEHAT — deploy ke Tencent EdgeOne Pages",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "dev": "node dev/server.js",
     "start": "node dev/server.js",
-    "build": "node dev/build.js",
     "smoke": "node dev/smoke-test.js",
     "test:token": "node dev/test-token-portability.js",
     "smoke:clinical": "node dev/smoke-clinical.js"
